@@ -10,7 +10,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cartItemsEl = document.getElementById('cart-items');
   const cartTotalEl = document.getElementById('cart-total');
   const copySummaryBtn = document.getElementById('copy-summary');
+  const checkoutBtn = document.getElementById('checkout-swiggy');
   const matchesEl = document.getElementById('matches');
+  // Payment elements
+  const upiVpaEl = document.getElementById('upi-vpa');
+  const upiAmountEl = document.getElementById('upi-amount');
+  const genQrBtn = document.getElementById('gen-qr');
+  const qrPreview = document.getElementById('qr-preview');
+  let upiUrl = '';
+
+  // Persist simple payment prefs
+  function savePaymentPrefs(vpa, amount) {
+    try { chrome.storage && chrome.storage.local.set({ upiVpa: vpa || '', upiAmount: String(amount || '') }); } catch {}
+  }
+  function loadPaymentPrefs() {
+    try {
+      chrome.storage && chrome.storage.local.get(['upiVpa', 'upiAmount'], (res) => {
+        if (upiVpaEl && res.upiVpa) upiVpaEl.value = res.upiVpa;
+        if (upiAmountEl && res.upiAmount) upiAmountEl.value = res.upiAmount;
+      });
+    } catch {}
+  }
+  function escHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
 
   let restaurants = [];
   let cart = [];
@@ -31,6 +52,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch {}
   }
+
+  // Keep cart in sync if changed by another view
+  try {
+    chrome.storage && chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.cart) {
+        cart = Array.isArray(changes.cart.newValue) ? changes.cart.newValue : [];
+        renderCart();
+      }
+    });
+  } catch {}
 
   function renderCart() {
     if (!cart.length) {
@@ -212,7 +243,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const lines = [
       'Order for Puch AI:',
   ...cart.map(c => `- ${c.name}: ₹${c.price} (from ${c.restaurant || 'Unknown'})`),
-      cart.length ? `Total: ₹${cart.reduce((s, c) => s + (Number(c.price) || 0), 0)}` : 'No items yet.'
+  cart.length ? `Total: ₹${cart.reduce((s, c) => s + (Number(c.price) || 0), 0)}` : 'No items yet.',
+  upiUrl ? `Pay via UPI: ${upiUrl}` : ''
     ];
     const text = lines.join('\n');
     navigator.clipboard.writeText(text).then(() => {
@@ -230,7 +262,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     return [
       'Order for Puch AI:',
       ...cart.map(c => `- ${c.name}: ₹${c.price} (from ${c.restaurant || 'Unknown'})`),
-      cart.length ? `Total: ₹${cart.reduce((s, c) => s + (Number(c.price) || 0), 0)}` : 'No items yet.'
+      cart.length ? `Total: ₹${cart.reduce((s, c) => s + (Number(c.price) || 0), 0)}` : 'No items yet.',
+      upiUrl ? `Pay via UPI: ${upiUrl}` : ''
     ].join('\n');
   }
 
@@ -295,6 +328,99 @@ document.addEventListener('DOMContentLoaded', async () => {
     sendBtn.addEventListener('click', () => sendToWhatsAppApi());
   }
 
+  // Payment: Generate UPI QR
+  function makeUpiUrl(vpa, amount, note = 'Puch AI Order') {
+    const params = new URLSearchParams({ pa: vpa, pn: 'Puch AI', am: String(amount || ''), tn: note, cu: 'INR' });
+    // upi://pay isn't directly scannable via plain img, so we encode the string into a QR via an image API
+    return 'upi://pay?' + params.toString();
+  }
+  function renderQr(text, vpa, amount) {
+    if (!text) { qrPreview.innerHTML = ''; return; }
+    const api = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(text);
+    const caption = `<div style="font-size:12px;color:#555;margin-top:6px;">Pay to: ${escHtml(vpa || '')}${amount?` • Amount: ₹${escHtml(amount)}`:''}</div>`;
+    qrPreview.innerHTML = `<img src="${api}" alt="UPI QR" width="180" height="180" />${caption}`;
+  }
+  if (genQrBtn) {
+    genQrBtn.addEventListener('click', () => {
+      const vpa = (upiVpaEl?.value || '').trim();
+      const amt = Number(upiAmountEl?.value || 0) || cart.reduce((s, c) => s + (Number(c.price) || 0), 0);
+      if (!vpa) { orderStatus.textContent = 'Enter a UPI ID to generate QR.'; return; }
+      upiUrl = makeUpiUrl(vpa, amt);
+      renderQr(upiUrl, vpa, amt);
+      savePaymentPrefs(vpa, amt);
+      orderStatus.textContent = 'UPI QR ready to scan.';
+    });
+  }
+
+  // Reset state on popup open to avoid showing last session data
+  function resetStateOnOpen() {
+    try {
+      chrome.storage && chrome.storage.local.set({ cart: [], upiVpa: '', upiAmount: '' });
+    } catch {}
+    cart = [];
+    upiUrl = '';
+    if (upiVpaEl) upiVpaEl.value = '';
+    if (upiAmountEl) upiAmountEl.value = '';
+  }
+
+  // Optional: Checkout in Swiggy (opens restaurant pages for items in your cart)
+  async function validateCartAndCheckout() {
+    if (!cart.length) { orderStatus.textContent = 'Cart is empty.'; return; }
+    orderStatus.textContent = 'Validating items with restaurants…';
+    // Group items by restaurant
+    const groups = cart.reduce((acc, c) => {
+      const key = c.restaurant || 'Unknown';
+      acc[key] = acc[key] || { name: key, items: [] };
+      acc[key].items.push(c);
+      return acc;
+    }, {});
+
+    // Ensure we have menus for these restaurants to validate availability
+    const missingMenus = [];
+    Object.keys(groups).forEach(rname => {
+      const r = restaurants.find(x => x.name === rname);
+      if (r && !allMenus[r.id]) missingMenus.push(r);
+    });
+    await Promise.all(missingMenus.map(r => new Promise(resolve => {
+      chrome.runtime.sendMessage({ type: 'FETCH_SWIGGY_MENU', restaurantId: r.id, lat: currentLat, lng: currentLng }, (resp) => {
+        if (resp && resp.success) allMenus[r.id] = (resp.menu || []).filter(m => Number(m.price) > 0);
+        resolve();
+      });
+    })));
+
+    // Check which items are still present (by fuzzy name match)
+    const unavailable = [];
+    Object.entries(groups).forEach(([rname, grp]) => {
+      const r = restaurants.find(x => x.name === rname);
+      const menu = r ? (allMenus[r.id] || []) : [];
+      grp.items.forEach(it => {
+        const nm = (it.name || '').toLowerCase();
+        const ok = menu.some(mi => (mi.name || '').toLowerCase() === nm || (mi.name || '').toLowerCase().includes(nm));
+        if (!ok) unavailable.push(`${it.name} (${rname})`);
+      });
+    });
+
+    if (unavailable.length) {
+      orderStatus.textContent = `Some items may be unavailable now: ${unavailable.slice(0,4).join(', ')}${unavailable.length>4?'…':''}`;
+    } else {
+      orderStatus.textContent = 'Items look available. Opening Swiggy…';
+    }
+
+    // Open each restaurant page so you can add items and checkout with your Swiggy account
+    const opened = new Set();
+    Object.keys(groups).forEach(rname => {
+      const r = restaurants.find(x => x.name === rname);
+      if (r && r.ctaLink && !opened.has(r.ctaLink)) {
+        opened.add(r.ctaLink);
+        chrome.tabs.create({ url: r.ctaLink });
+      }
+    });
+  }
+
+  if (checkoutBtn) {
+    checkoutBtn.addEventListener('click', validateCartAndCheckout);
+  }
+
   function loadRestaurants() {
     chrome.runtime.sendMessage({ type: 'FETCH_SWIGGY_RESTAURANTS', lat: currentLat, lng: currentLng }, (response) => {
       if (response && response.success) {
@@ -353,22 +479,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       .finally(() => loadRestaurants());
   }
 
-  if (navigator.geolocation) {
+  // Geolocation init with Permissions API to surface clear status
+  function requestGeoAndLoad() {
     navigator.geolocation.getCurrentPosition((pos) => {
       currentLat = pos.coords.latitude;
       currentLng = pos.coords.longitude;
       orderStatus.textContent = 'Using your current location.';
       loadRestaurants();
-    }, () => {
-      orderStatus.textContent = 'Location denied; resolving approximate location…';
+    }, (err) => {
+      orderStatus.textContent = 'Location denied or unavailable; resolving approximate location…';
       tryIpLocation();
-    }, { timeout: 8000 });
+    }, { timeout: 8000, maximumAge: 0, enableHighAccuracy: false });
+  }
+
+  if (navigator.geolocation) {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((status) => {
+        if (status.state === 'granted' || status.state === 'prompt') {
+          requestGeoAndLoad();
+        } else {
+          orderStatus.textContent = 'Location is blocked. Click "Use my location" to retry, or allow location for this extension in Chrome settings.';
+          tryIpLocation();
+        }
+        status.onchange = () => {
+          // If user flips permission while popup is open
+          if (status.state === 'granted') requestGeoAndLoad();
+        };
+      }).catch(() => requestGeoAndLoad());
+    } else {
+      requestGeoAndLoad();
+    }
   } else {
     tryIpLocation();
   }
 
+  // Removed manual retry button; automatic geolocation/IP fallback remains
+
   // Initial UI
+  resetStateOnOpen();
   renderCart();
   orderStatus.textContent = 'Tell me what you want to eat; I’ll find it nearby.';
   loadCart();
+  loadPaymentPrefs();
 });

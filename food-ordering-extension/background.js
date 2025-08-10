@@ -38,6 +38,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 						name: r.info?.name,
 					image: swiggyImgUrl(r.info?.cloudinaryImageId, 160, 120),
 						rating: r.info?.avgRating,
+						// Try to capture Swiggy's official restaurant URL when present
+						ctaLink: r.cta?.link || r.info?.cta?.link || null,
 						menu: [] // Menus require a separate API call per restaurant
 					}));
 					cache.listKey = key;

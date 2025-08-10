@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+        { "header": "Access-Control-Allow-Methods", "operation": "set", "value": "GET, POST, OPTIONS" },
+        { "header": "Access-Control-Allow-Headers", "operation": "set", "value": "*" }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(www\\.)?swiggy\\.com/.*",
+      "resourceTypes": ["xmlhttprequest", "sub_frame", "main_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": { "type": "modifyHeaders", "requestHeaders": [
+      { "header": "Origin", "operation": "set", "value": "https://www.swiggy.com" }
+    ]},
+    "condition": {
+      "regexFilter": "^https://(www\\.)?swiggy\\.com/.*",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  }
+]
