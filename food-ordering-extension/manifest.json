@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Puch AI Food Ordering Assistant",
+  "version": "1.0.0",
+  "description": "Enhance your food ordering experience with Swiggy data and order tracking.",
+  "permissions": ["storage", "scripting", "clipboardWrite", "tabs"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://www.swiggy.com/*",
+    "https://ipapi.co/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"]
+    }
+  ]
+}

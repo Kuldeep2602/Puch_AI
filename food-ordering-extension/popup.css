@@ -1,0 +1,56 @@
+body {
+  font-family: Arial, sans-serif;
+  width: 350px;
+  margin: 0;
+  padding: 0;
+  background: #fff;
+}
+#app {
+  padding: 16px;
+}
+h1 {
+  font-size: 1.4em;
+  margin-bottom: 12px;
+}
+.brand { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.brand-icon { border-radius:8px; }
+.brand-text { font-weight:700; font-size:1.25em; color:#111; }
+.controls { display: flex; gap: 8px; margin-bottom: 8px; }
+.controls input { flex: 1; padding: 6px; }
+.controls button { padding: 6px 10px; }
+.btn-primary { background:#2563eb; color:#fff; border:none; border-radius:6px; }
+.btn-secondary { background:#f3f4f6; border:1px solid #e5e7eb; border-radius:6px; }
+.restaurant {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 10px;
+  background: #fafafa;
+}
+.restaurant h2 {
+  margin: 0 0 8px 0;
+  font-size: 1.1em;
+}
+.restaurant ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.restaurant li {
+  margin-bottom: 4px;
+}
+#order-status {
+  font-size: 1.1em;
+  color: #2d7a2d;
+}
+/* Cart */
+#cart h2 { margin: 8px 0; font-size: 1.2em; }
+#cart-items { list-style: none; padding: 0; margin: 0 0 6px 0; }
+#cart-items li { margin: 4px 0; }
+#cart button { padding: 6px 10px; }
+
+/* Matches */
+#matches { margin: 10px 0; }
+#matches .match { display:flex; align-items:center; justify-content:space-between; border:1px solid #eee; border-radius:8px; padding:8px; margin-bottom:8px; background:#fff; }
+#matches .match .info { display:flex; align-items:center; gap:8px; }
+#matches img { width:40px; height:30px; object-fit:cover; border-radius:4px; }
